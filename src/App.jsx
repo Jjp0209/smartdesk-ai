@@ -1,19 +1,70 @@
 import { useState, useRef, useEffect } from "react";
 
-// SmartDesk AI — Joe's Barbershop demo (deployed version)
-// The widget calls /api/chat, a Vercel serverless function that
-// holds the Anthropic API key server-side.
+// SmartDesk AI — Enhanced Multi-Business Demo
+// Enhancement: Business selector allowing users to switch between
+// multiple configured business personas. Demonstrates the SaaS
+// platform model — one codebase, multiple business configurations.
 
 const NAVY = "#10213F";
 const NAVY_LIGHT = "#1B3158";
-const ACCENT = "#C8A24A";
 
-const SUGGESTIONS = [
-  "What are your hours?",
-  "How much is a haircut?",
-  "Can I book an appointment?",
-];
+// ── BUSINESS CONFIGURATIONS ─────────────────────────────────────────────────
+// This is the core enhancement — instead of one hardcoded business,
+// the platform now supports multiple business configurations.
+const BUSINESSES = {
+  barbershop: {
+    id: "barbershop",
+    name: "Joe's Barbershop",
+    tagline: "A proper cut, the old-fashioned way.",
+    description:
+      "Sharp fades, clean trims, and good conversation in the heart of Mountain Top. Appointments recommended — walk-ins always welcome.",
+    location: "Main Street · Mountain Top, PA",
+    accent: "#A6342B",
+    accentLight: "#f9f0ef",
+    avatar: "JB",
+    avatarColor: "#C8A24A",
+    greeting:
+      "Hi there! I'm the SmartDesk assistant for Joe's Barbershop on Main Street in Mountain Top. How can I help you today?",
+    suggestions: [
+      "What are your hours?",
+      "How much is a haircut?",
+      "Can I book an appointment?",
+    ],
+    services: [
+      { title: "Haircut", price: "$25", desc: "Classic or modern — cut, lined up, and styled." },
+      { title: "Beard Trim", price: "$15", desc: "Shaped, edged, and finished with hot towel." },
+      { title: "Hours", price: "Tue–Sat", desc: "Closed Sunday & Monday. Book ahead or just stop in." },
+    ],
+    footer: "Joe's Barbershop · Main Street, Mountain Top, PA · Customer support by SmartDesk AI",
+  },
+  dental: {
+    id: "dental",
+    name: "Mountain Top Dental",
+    tagline: "Healthy smiles for the whole family.",
+    description:
+      "Comprehensive dental care for patients of all ages. From routine cleanings to cosmetic procedures, we keep Mountain Top smiling.",
+    location: "Oak Street · Mountain Top, PA",
+    accent: "#1a6b9a",
+    accentLight: "#eef5fb",
+    avatar: "MTD",
+    avatarColor: "#34b8d4",
+    greeting:
+      "Hello! I'm the SmartDesk assistant for Mountain Top Dental on Oak Street. I can help you schedule an appointment or answer questions about our services. How can I help?",
+    suggestions: [
+      "What services do you offer?",
+      "Do you accept insurance?",
+      "Can I book a cleaning?",
+    ],
+    services: [
+      { title: "Cleaning", price: "$120", desc: "Full cleaning, exam, and X-rays. Most insurance accepted." },
+      { title: "Whitening", price: "$250", desc: "Professional in-office whitening treatment." },
+      { title: "Hours", price: "Mon–Fri", desc: "8am–5pm weekdays. Saturday by appointment only." },
+    ],
+    footer: "Mountain Top Dental · Oak Street, Mountain Top, PA · Patient support by SmartDesk AI",
+  },
+};
 
+// ── CHAT ICON ────────────────────────────────────────────────────────────────
 function ChatIcon({ open }) {
   return open ? (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round">
@@ -27,6 +78,7 @@ function ChatIcon({ open }) {
   );
 }
 
+// ── TYPING DOTS ──────────────────────────────────────────────────────────────
 function TypingDots() {
   return (
     <div style={{ display: "flex", gap: 4, padding: "12px 14px" }}>
@@ -47,20 +99,25 @@ function TypingDots() {
   );
 }
 
-function ChatWidget() {
+// ── CHAT WIDGET ──────────────────────────────────────────────────────────────
+function ChatWidget({ business }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      content:
-        "Hi there! I'm the SmartDesk assistant for Joe's Barbershop on Main Street in Mountain Top. How can I help you today?",
-    },
+    { role: "assistant", content: business.greeting },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Reset conversation when business changes
+  useEffect(() => {
+    setMessages([{ role: "assistant", content: business.greeting }]);
+    setInput("");
+    setError(null);
+    setOpen(false);
+  }, [business.id]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -84,6 +141,7 @@ function ChatWidget() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: next.map((m) => ({ role: m.role, content: m.content })),
+          businessId: business.id,
         }),
       });
       const data = await response.json();
@@ -112,7 +170,7 @@ function ChatWidget() {
       {open && (
         <div
           role="dialog"
-          aria-label="Chat with Joe's Barbershop"
+          aria-label={`Chat with ${business.name}`}
           style={{
             position: "fixed",
             bottom: 96,
@@ -137,21 +195,21 @@ function ChatWidget() {
                 height: 40,
                 borderRadius: "50%",
                 background: NAVY_LIGHT,
-                border: `2px solid ${ACCENT}`,
+                border: `2px solid ${business.avatarColor}`,
                 color: "#fff",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontWeight: 700,
-                fontSize: 14,
+                fontSize: 12,
                 letterSpacing: ".5px",
                 flexShrink: 0,
               }}
             >
-              JB
+              {business.avatar}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Joe's Barbershop</div>
+              <div style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>{business.name}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#34D399", boxShadow: "0 0 0 3px rgba(52,211,153,.25)" }} />
                 <span style={{ color: "rgba(255,255,255,.75)", fontSize: 12 }}>Online · replies instantly</span>
@@ -198,7 +256,7 @@ function ChatWidget() {
             {error && <div style={{ textAlign: "center", color: "#B4232A", fontSize: 12, marginTop: 6 }}>{error}</div>}
             {showSuggestions && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                {SUGGESTIONS.map((s) => (
+                {business.suggestions.map((s) => (
                   <button
                     key={s}
                     className="sd-chip"
@@ -293,50 +351,88 @@ function ChatWidget() {
   );
 }
 
+// ── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const [selectedBusiness, setSelectedBusiness] = useState("barbershop");
+  const business = BUSINESSES[selectedBusiness];
+
   return (
-    <div style={{ minHeight: "100vh", background: "#FBF9F4", fontFamily: "'Inter', system-ui, sans-serif", color: "#23201A" }}>
+    <div style={{ minHeight: "100vh", background: business.accentLight, fontFamily: "'Inter', system-ui, sans-serif", color: "#23201A", transition: "background .3s" }}>
+
+      {/* BUSINESS SELECTOR BANNER — NEW ENHANCEMENT */}
+      <div style={{
+        background: NAVY,
+        padding: "10px 6vw",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+      }}>
+        <span style={{ color: "rgba(255,255,255,.7)", fontSize: 12, fontWeight: 500 }}>
+          SmartDesk AI Demo — Select a business:
+        </span>
+        {Object.values(BUSINESSES).map((b) => (
+          <button
+            key={b.id}
+            onClick={() => setSelectedBusiness(b.id)}
+            style={{
+              padding: "6px 16px",
+              borderRadius: 999,
+              border: `2px solid ${selectedBusiness === b.id ? b.avatarColor : "rgba(255,255,255,.3)"}`,
+              background: selectedBusiness === b.id ? b.avatarColor : "transparent",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all .2s",
+            }}
+          >
+            {b.name}
+          </button>
+        ))}
+      </div>
+
+      {/* NAV */}
       <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 6vw", borderBottom: "1px solid #E9E4D8" }}>
         <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>
-          Joe's <span style={{ color: "#A6342B" }}>Barbershop</span>
+          {business.name.split(" ").slice(0, -1).join(" ")}{" "}
+          <span style={{ color: business.accent }}>{business.name.split(" ").slice(-1)}</span>
         </div>
-        <div style={{ fontSize: 14, color: "#6B6457" }}>Main Street · Mountain Top, PA</div>
+        <div style={{ fontSize: 14, color: "#6B6457" }}>{business.location}</div>
       </nav>
 
+      {/* HERO */}
       <header style={{ padding: "11vh 6vw 9vh", maxWidth: 880 }}>
-        <div style={{ fontSize: 13, letterSpacing: "2.5px", textTransform: "uppercase", color: "#A6342B", fontWeight: 600, marginBottom: 16 }}>
-          Est. on Main Street
+        <div style={{ fontSize: 13, letterSpacing: "2.5px", textTransform: "uppercase", color: business.accent, fontWeight: 600, marginBottom: 16 }}>
+          {business.location}
         </div>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "clamp(38px, 6vw, 64px)", lineHeight: 1.08, margin: 0 }}>
-          A proper cut, the old-fashioned way.
+          {business.tagline}
         </h1>
         <p style={{ fontSize: 17, lineHeight: 1.65, color: "#5C564A", maxWidth: 540, marginTop: 22 }}>
-          Sharp fades, clean trims, and good conversation in the heart of Mountain Top.
-          Appointments recommended — walk-ins always welcome.
+          {business.description}
         </p>
       </header>
 
+      {/* SERVICES */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 18, padding: "0 6vw 12vh", maxWidth: 1100 }}>
-        {[
-          { title: "Haircut", price: "$25", desc: "Classic or modern — cut, lined up, and styled." },
-          { title: "Beard Trim", price: "$15", desc: "Shaped, edged, and finished with hot towel." },
-          { title: "Hours", price: "Tue–Sat", desc: "Closed Sunday & Monday. Book ahead or just stop in." },
-        ].map((c) => (
+        {business.services.map((c) => (
           <div key={c.title} style={{ background: "#fff", border: "1px solid #E9E4D8", borderRadius: 12, padding: "26px 24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, margin: 0 }}>{c.title}</h3>
-              <span style={{ color: "#A6342B", fontWeight: 700, fontSize: 18 }}>{c.price}</span>
+              <span style={{ color: business.accent, fontWeight: 700, fontSize: 18 }}>{c.price}</span>
             </div>
             <p style={{ color: "#6B6457", fontSize: 14, lineHeight: 1.6, marginTop: 10, marginBottom: 0 }}>{c.desc}</p>
           </div>
         ))}
       </section>
 
+      {/* FOOTER */}
       <footer style={{ borderTop: "1px solid #E9E4D8", padding: "22px 6vw", fontSize: 13, color: "#8A8270" }}>
-        Joe's Barbershop · Main Street, Mountain Top, PA · Customer support by SmartDesk AI
+        {business.footer}
       </footer>
 
-      <ChatWidget />
+      <ChatWidget business={business} />
     </div>
   );
 }
