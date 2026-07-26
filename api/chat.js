@@ -1,11 +1,49 @@
 // Vercel serverless function — SmartDesk AI
-// Enhanced Part Two: Simulated calendar integration with availability slots
-// and booking confirmation. Architecture mirrors real Google Calendar OAuth flow.
-// Full OAuth integration in development for final presentation.
+// Revision: Added rate limiting to prevent API cost attacks.
+// Max 10 requests per IP address per minute.
+// Previously identified as the most serious vulnerability during testing phase.
 
-// ── SIMULATED AVAILABILITY ───────────────────────────────────────────────────
-// In production this would be replaced by live Google Calendar API calls.
-// The conversation flow and data structure are identical to what OAuth would produce.
+// ── RATE LIMITER ─────────────────────────────────────────────────────────────
+const rateLimitMap = new Map();
+const RATE_LIMIT_MAX = 10;       // max requests per window
+const RATE_LIMIT_WINDOW = 60000; // 1 minute in milliseconds
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return { allowed: true, remaining: RATE_LIMIT_MAX - 1 };
+  }
+
+  // Reset window if expired
+  if (now - record.windowStart > RATE_LIMIT_WINDOW) {
+    rateLimitMap.set(ip, { count: 1, windowStart: now });
+    return { allowed: true, remaining: RATE_LIMIT_MAX - 1 };
+  }
+
+  // Within window — check count
+  if (record.count >= RATE_LIMIT_MAX) {
+    const resetIn = Math.ceil((RATE_LIMIT_WINDOW - (now - record.windowStart)) / 1000);
+    return { allowed: false, remaining: 0, resetIn };
+  }
+
+  record.count++;
+  return { allowed: true, remaining: RATE_LIMIT_MAX - record.count };
+}
+
+// Clean up old entries every 5 minutes to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of rateLimitMap.entries()) {
+    if (now - record.windowStart > RATE_LIMIT_WINDOW * 2) {
+      rateLimitMap.delete(ip);
+    }
+  }
+}, 300000);
+
+// ── SIMULATED AVAILABILITY ────────────────────────────────────────────────────
 const AVAILABILITY = {
   barbershop: {
     Monday: [],
@@ -81,7 +119,7 @@ Step 1: Ask if they are a new or existing patient
 Step 2: Ask what type of appointment (cleaning, whitening, exam, or other)
 Step 3: Ask what day they prefer
 Step 4: The system will provide available slots — present them clearly as a numbered list
-Step 5: When patient picks a slot, confirm: "Great! I have you scheduled for a [service] on [day] at [time]. Your confirmation code is [CODE]. Our front desk will call to confirm your insurance before the appointment."
+Step 5: When patient picks a slot, confirm with service, day, time, and confirmation code
 Step 6: Never say the booking is 100% finalized
 
 Personality: Warm, calm, professional. 1-3 sentences. Sound like a friendly dental receptionist.
@@ -94,6 +132,25 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  // ── RATE LIMITING ──────────────────────────────────────────────────────────
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
+    || req.headers["x-real-ip"]
+    || req.socket?.remoteAddress
+    || "unknown";
+
+  const rateCheck = checkRateLimit(ip);
+
+  // Set rate limit headers so clients can see their status
+  res.setHeader("X-RateLimit-Limit", RATE_LIMIT_MAX);
+  res.setHeader("X-RateLimit-Remaining", rateCheck.remaining);
+
+  if (!rateCheck.allowed) {
+    return res.status(429).json({
+      error: "Too many requests. Please wait before sending another message.",
+      retryAfter: rateCheck.resetIn,
+    });
+  }
+
   const { messages, businessId } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "messages array is required" });
@@ -103,8 +160,7 @@ export default async function handler(req, res) {
   const systemPrompt = SYSTEM_PROMPTS[id] || SYSTEM_PROMPTS.barbershop;
   const lastUserMsg = messages[messages.length - 1]?.content || "";
 
-  // ── CALENDAR ENHANCEMENT: inject availability into conversation ──────────────
-  // Detect if the user message contains a day reference and a booking intent
+  // ── CALENDAR INJECTION ────────────────────────────────────────────────────
   const bookingKeywords = ["book", "appointment", "schedule", "available", "come in", "slot", "time"];
   const hasBookingIntent = bookingKeywords.some(k => lastUserMsg.toLowerCase().includes(k));
   const detectedDay = getDayFromText(lastUserMsg);
@@ -121,7 +177,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // Detect if customer is confirming a specific time slot — generate confirmation code
   const timePattern = /\b(1[0-2]|0?[1-9]):[0-5][0-9]\s?(AM|PM|am|pm)\b/;
   const isConfirmingTime = timePattern.test(lastUserMsg) || /^[1-9]$/.test(lastUserMsg.trim());
   if (isConfirmingTime) {
